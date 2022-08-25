@@ -1,124 +1,123 @@
 import time
-import nfc
 import requests
 import uuid
 import appsettings #you shouldnt need to edit this file
 import usersettings #this is the file you might need to edit
 import sys
+import RPi.GPIO as gpio
+from mfrc522 import SimpleMFRC522
 
 # this function gets called when a NFC tag is detected
-def touched(tag):
+def touched(id, text):
     global sonosroom_local
 
-    if tag.ndef:
-        for record in tag.ndef.records:
-            try:
-                receivedtext = record.text
-            except:
-                print("Error reading a *TEXT* tag from NFC.")
-                return True
-            
-            receivedtext_lower = receivedtext.lower()
+    try:
+        receivedtext = text
+    except:
+        print("Error reading a *TEXT* tag from NFC.")
+        return True
+    
+    receivedtext_lower = receivedtext.lower()
 
-            print("")
-            print("Read from NFC tag: "+ receivedtext)
+    print("")
+    print("Read from NFC tag: "+ receivedtext)
 
-            servicetype = ""
-            
-            #check if a full HTTP URL read from NFC
-            if receivedtext_lower.startswith ('http'):
-                servicetype = "completeurl"
-                sonosinstruction = receivedtext
+    servicetype = ""
+    
+    #check if a full HTTP URL read from NFC
+    if receivedtext_lower.startswith ('http'):
+        servicetype = "completeurl"
+        sonosinstruction = receivedtext
 
-            #determine which music service read from NFC
-            if receivedtext_lower.startswith ('spotify'):
-                servicetype = "spotify"
-                sonosinstruction = "spotify/now/" + receivedtext
+    #determine which music service read from NFC
+    if receivedtext_lower.startswith ('spotify'):
+        servicetype = "spotify"
+        sonosinstruction = "spotify/now/" + receivedtext
 
-            if receivedtext_lower.startswith ('tunein'):
-                servicetype = "tunein"
-                sonosinstruction = receivedtext
-            
-            if receivedtext_lower.startswith ('favorite'):
-                servicetype = "favorite"
-                sonosinstruction = receivedtext
-            
-            if receivedtext_lower.startswith ('amazonmusic:'):
-                servicetype = "amazonmusic"
-                sonosinstruction = "amazonmusic/now/" + receivedtext[12:]
+    if receivedtext_lower.startswith ('tunein'):
+        servicetype = "tunein"
+        sonosinstruction = receivedtext
+    
+    if receivedtext_lower.startswith ('favorite'):
+        servicetype = "favorite"
+        sonosinstruction = receivedtext
+    
+    if receivedtext_lower.startswith ('amazonmusic:'):
+        servicetype = "amazonmusic"
+        sonosinstruction = "amazonmusic/now/" + receivedtext[12:]
 
-            if receivedtext_lower.startswith ('apple:'):
-                servicetype = "applemusic"
-                sonosinstruction = "applemusic/now/" + receivedtext[6:]
+    if receivedtext_lower.startswith ('apple:'):
+        servicetype = "applemusic"
+        sonosinstruction = "applemusic/now/" + receivedtext[6:]
 
-            if receivedtext_lower.startswith ('applemusic:'):
-                servicetype = "applemusic"
-                sonosinstruction = "applemusic/now/" + receivedtext[11:]
+    if receivedtext_lower.startswith ('applemusic:'):
+        servicetype = "applemusic"
+        sonosinstruction = "applemusic/now/" + receivedtext[11:]
 
-            if receivedtext_lower.startswith ('bbcsounds:'):
-                servicetype = "bbcsounds"
-                sonosinstruction = 'bbcsounds/play/' + receivedtext[10:]
+    if receivedtext_lower.startswith ('bbcsounds:'):
+        servicetype = "bbcsounds"
+        sonosinstruction = 'bbcsounds/play/' + receivedtext[10:]
 
-            #check if a Sonos "command" or room change read from NFC
-            if receivedtext_lower.startswith ('command'):
-                servicetype = "command"
-                sonosinstruction = receivedtext[8:]
-            
-            if receivedtext_lower.startswith ('room'):
-                servicetype = "room"
-                sonosroom_local = receivedtext[5:]
-                print ("Sonos room changed to " + sonosroom_local)
-                return True
+    #check if a Sonos "command" or room change read from NFC
+    if receivedtext_lower.startswith ('command'):
+        servicetype = "command"
+        sonosinstruction = receivedtext[8:]
+    
+    if receivedtext_lower.startswith ('room'):
+        servicetype = "room"
+        sonosroom_local = receivedtext[5:]
+        print ("Sonos room changed to " + sonosroom_local)
+        return True
 
-            #if no service or command detected, exit
-            if servicetype == "":
-                print ("Service type not recognised. NFC tag text should begin spotify, tunein, amazonmusic, apple/applemusic, command or room.")
-                if usersettings.sendanonymoususagestatistics == "yes":
-                    r = requests.post(appsettings.usagestatsurl, data = {'time': time.time(), 'value1': appsettings.appversion, 'value2': hex(uuid.getnode()), 'value3': 'invalid service type sent'})
-                return True
-            
-            print ("Detected " + servicetype + " service request")
+    #if no service or command detected, exit
+    if servicetype == "":
+        print ("Service type not recognised. NFC tag text should begin spotify, tunein, amazonmusic, apple/applemusic, command or room.")
+        if usersettings.sendanonymoususagestatistics == "yes":
+            r = requests.post(appsettings.usagestatsurl, data = {'time': time.time(), 'value1': appsettings.appversion, 'value2': hex(uuid.getnode()), 'value3': 'invalid service type sent'})
+        return True
+    
+    print ("Detected " + servicetype + " service request")
 
-            #build the URL we want to request
-            if servicetype.lower() == 'completeurl':
-                urltoget = sonosinstruction
-            else:
-                urltoget = usersettings.sonoshttpaddress + "/" + sonosroom_local + "/" + sonosinstruction
-            
-            #check Sonos API is responding
-            try:
-                r = requests.get(usersettings.sonoshttpaddress)
-            except:
-                print ("Failed to connect to Sonos API at " + usersettings.sonoshttpaddress)
-                return True
+    #build the URL we want to request
+    if servicetype.lower() == 'completeurl':
+        urltoget = sonosinstruction
+    else:
+        urltoget = usersettings.sonoshttpaddress + "/" + sonosroom_local + "/" + sonosinstruction
+    
+    #check Sonos API is responding
+    try:
+        r = requests.get(usersettings.sonoshttpaddress)
+    except:
+        print ("Failed to connect to Sonos API at " + usersettings.sonoshttpaddress)
+        return True
 
-            #clear the queue for every service request type except commands
-            if servicetype != "command":
-                print ("Clearing Sonos queue")
-                r = requests.get(usersettings.sonoshttpaddress + "/" + sonosroom_local + "/clearqueue")
+    #clear the queue for every service request type except commands
+    if servicetype != "command":
+        print ("Clearing Sonos queue")
+        r = requests.get(usersettings.sonoshttpaddress + "/" + sonosroom_local + "/clearqueue")
 
-            #use the request function to get the URL built previously, triggering the sonos
-            print ("Fetching URL via HTTP: "+ urltoget)
-            r = requests.get(urltoget)
+    #use the request function to get the URL built previously, triggering the sonos
+    print ("Fetching URL via HTTP: "+ urltoget)
+    r = requests.get(urltoget)
 
-            if r.status_code != 200:
-                print ("Error code returned from Sonos API")
-                return True
-            
-            print ("Sonos API reports " + r.json()['status'])
+    if r.status_code != 200:
+        print ("Error code returned from Sonos API")
+        return True
+    
+    print ("Sonos API reports " + r.json()['status'])
 
-            #put together log data and send (if given permission)
-            if usersettings.sendanonymoususagestatistics == "yes":
-                logdata = {
-                'time': time.time(),
-                'value1': appsettings.appversion,
-                'value2': hex(uuid.getnode()),
-                'actiontype': 'nfcread',
-                'value3': receivedtext,
-                'servicetype': servicetype,
-                'urltoget': urltoget
-                }
-                r = requests.post(appsettings.usagestatsurl, data = logdata)
+    #put together log data and send (if given permission)
+    if usersettings.sendanonymoususagestatistics == "yes":
+        logdata = {
+        'time': time.time(),
+        'value1': appsettings.appversion,
+        'value2': hex(uuid.getnode()),
+        'actiontype': 'nfcread',
+        'value3': receivedtext,
+        'servicetype': servicetype,
+        'urltoget': urltoget
+        }
+        r = requests.post(appsettings.usagestatsurl, data = logdata)
 
     else:
         print("")
@@ -140,7 +139,7 @@ print("")
 print("NFC READER")
 print("Connecting to NFC reader...")
 try:
-    reader = nfc.ContactlessFrontend(usersettings.nfc_reader_path)
+    reader = SimpleMFRC522()
 except IOError as e:
     print ("... could not connect to reader")
     print ("")
@@ -179,9 +178,10 @@ print("")
 print("OK, all ready! Present an NFC tag.")
 print("")
 
-if usersettings.sendanonymoususagestatistics == "yes":
-    r = requests.post(appsettings.usagestatsurl, data = {'time': time.time(), 'value1': appsettings.appversion, 'value2': hex(uuid.getnode()), 'value3': 'appstart'})
-
-while True:
-    reader.connect(rdwr={'on-connect': touched, 'beep-on-connect': False})
-    time.sleep(0.1);
+try:
+    while True:
+        id, text = reader.read()
+        touched(id, text)
+        time.sleep(0.1);
+finally:
+    gpio.cleanup()
