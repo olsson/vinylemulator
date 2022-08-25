@@ -86,7 +86,7 @@ def touched(id, text):
     
     #check Sonos API is responding
     try:
-        r = requests.get(usersettings.sonoshttpaddress)
+        r = requests.get(usersettings.sonoshttpaddress + "/zones")
     except:
         print ("Failed to connect to Sonos API at " + usersettings.sonoshttpaddress)
         return True
@@ -99,6 +99,7 @@ def touched(id, text):
     #use the request function to get the URL built previously, triggering the sonos
     print ("Fetching URL via HTTP: "+ urltoget)
     r = requests.get(urltoget)
+    print ("Response was: " + r.json())
 
     if r.status_code != 200:
         print ("Error code returned from Sonos API")
