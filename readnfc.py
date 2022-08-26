@@ -96,6 +96,7 @@ def touched(id, text):
         print ("Clearing Sonos queue")
         r = requests.get(usersettings.sonoshttpaddress + "/" + sonosroom_local + "/clearqueue")
     
+    # allow queue some time to clear properly
     time.sleep(1);
 
     #use the request function to get the URL built previously, triggering the sonos
